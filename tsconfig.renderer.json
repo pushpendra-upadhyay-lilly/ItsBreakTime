@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["svelte"]
+  },
+  "include": ["src/renderer/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
