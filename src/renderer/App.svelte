@@ -73,7 +73,7 @@
 
 <main>
   <header>
-    <h1>ItsBreakTime</h1>
+    <h1>BreakMate</h1>
     <div class="header-controls">
       <!-- Toggle Settings Button -->
       <button

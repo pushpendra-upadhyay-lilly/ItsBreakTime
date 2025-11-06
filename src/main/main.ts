@@ -17,7 +17,7 @@ export interface StoreSchema {
 
 // Initialize electron-store with proper typing
 const store = new Store<StoreSchema>({
-  name: 'itsbreaktime-settings',
+  name: 'breakmate-settings',
   defaults: {
     theme: 'light',
     breakInterval: 20,
@@ -452,11 +452,11 @@ function createTray() {
   icon.setTemplateImage(true);
 
   tray = new Tray(icon);
-  tray.setToolTip('ItsBreakTime');
+  tray.setToolTip('BreakMate');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open ItsBreakTime',
+      label: 'Open BreakMate',
       click: () => {
         // On macOS, ensure dock stays hidden even when showing window
         if (process.platform === 'darwin') {

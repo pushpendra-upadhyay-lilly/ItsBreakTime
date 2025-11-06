@@ -1,10 +1,10 @@
-# ItsBreakTime
+# BreakMate
 
-A free and open-source desktop application for digital wellness and healthy screen habits. ItsBreakTime brings all the features of LookAway to everyone, completely free—helping you combat digital eye strain, maintain better posture, and build sustainable work routines.[1][2][3]
+A free and open-source desktop application for digital wellness and healthy screen habits. BreakMate brings all the features of LookAway to everyone, completely free—helping you combat digital eye strain, maintain better posture, and build sustainable work routines.[1][2][3]
 
 ## Description
 
-ItsBreakTime is a cross-platform desktop application built with Electron and Svelte that helps protect your eyes and boost productivity through smart break reminders. The app runs in your system tray and intelligently reminds you to take breaks, preventing eye strain, poor posture, and burnout.[2][1]
+BreakMate is a cross-platform desktop application built with Electron and Svelte that helps protect your eyes and boost productivity through smart break reminders. The app runs in your system tray and intelligently reminds you to take breaks, preventing eye strain, poor posture, and burnout.[2][1]
 
 ### Key Features
 
@@ -35,8 +35,8 @@ Before you begin, ensure you have the following installed on your system:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/itsbreaktime.git
-cd itsbreaktime
+git clone https://github.com/yourusername/breakmate.git
+cd breakmate
 ```
 
 2. Install dependencies:
@@ -159,7 +159,7 @@ After building, you'll find:
 ## Project Structure
 
 ```
-itsbreaktime/
+breakmate/
 ├── dist/               # Compiled output
 │   └── main/          # Compiled main process
 ├── out/               # Built distributables
@@ -177,7 +177,7 @@ We welcome contributions from the community! Here's how you can help:
 
 ### Reporting Issues
 
-- Check if the issue already exists in the [Issues](https://github.com/yourusername/itsbreaktime/issues) section
+- Check if the issue already exists in the [Issues](https://github.com/yourusername/breakmate/issues) section
 - Provide detailed information: OS version, Node version, steps to reproduce
 - Include screenshots or error logs when applicable
 
@@ -254,7 +254,7 @@ This project is licensed under the ISC License.[4]
 
 ## Acknowledgments
 
-ItsBreakTime is inspired by LookAway, bringing digital wellness features to everyone through open source.[3][2][1]
+BreakMate is inspired by LookAway, bringing digital wellness features to everyone through open source.[3][2][1]
 
 ---
 

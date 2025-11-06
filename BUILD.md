@@ -1,4 +1,4 @@
-# Build Guide for ItsBreakTime
+# Build Guide for BreakMate
 
 ## Quick Start
 
@@ -68,9 +68,9 @@ npm run package:mac
 ### Files Generated
 
 **For macOS:**
-- `ItsBreakTime-darwin-arm64-<version>.zip` (Apple Silicon)
-- `ItsBreakTime-darwin-x64-<version>.zip` (Intel)
-- `ItsBreakTime-darwin-universal-<version>.zip` (Universal)
+- `BreakMate-darwin-arm64-<version>.zip` (Apple Silicon)
+- `BreakMate-darwin-x64-<version>.zip` (Intel)
+- `BreakMate-darwin-universal-<version>.zip` (Universal)
 
 ---
 
@@ -79,8 +79,8 @@ npm run package:mac
 ### forge.config.js
 
 Key configurations:
-- **App Name**: ItsBreakTime
-- **Bundle ID**: com.itsbreaktime.app
+- **App Name**: BreakMate
+- **Bundle ID**: com.breakmate.app
 - **Category**: Productivity
 - **Icon**: `./assets/icon.icns`
 - **ASAR**: Enabled (for code protection)
@@ -174,7 +174,7 @@ npm run make -- --platform linux
 
 2. **Permissions:**
    ```bash
-   chmod +x out/ItsBreakTime-darwin-arm64/ItsBreakTime.app/Contents/MacOS/ItsBreakTime
+   chmod +x out/BreakMate-darwin-arm64/BreakMate.app/Contents/MacOS/BreakMate
    ```
 
 ### Large File Size

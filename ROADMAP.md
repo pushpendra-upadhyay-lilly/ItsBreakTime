@@ -9,7 +9,9 @@ Let's map out a **complete development roadmap** for building your **LookAway-st
 
 ### Project Name (placeholder)
 
-> **ItsBreakTime** – a mindful screen companion for devs and creatives
+## 🎯 Vision
+
+> **BreakMate** – a mindful screen companion for devs and creatives
 
 ---
 
@@ -35,7 +37,9 @@ Let's map out a **complete development roadmap** for building your **LookAway-st
 
 #### 🎯 Deliverable
 
-> “Hello ItsBreakTime” app runs on macOS, Windows, Linux.
+> **Goal:**
+
+> "Hello BreakMate" app runs on macOS, Windows, Linux.
 > Menu bar icon + simple UI renders.
 
 ---
@@ -175,7 +179,9 @@ Let's map out a **complete development roadmap** for building your **LookAway-st
 
 #### 🎯 Deliverable
 
-> Public release of **ItsBreakTime** v1.0 🚀
+> **Outcome:**
+
+> Public release of **BreakMate** v1.0 🚀
 
 ---
 

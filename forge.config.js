@@ -4,9 +4,9 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 export default {
   packagerConfig: {
     asar: true,
-    name: 'ItsBreakTime',
-    executableName: 'ItsBreakTime',
-    appBundleId: 'com.itsbreaktime.app',
+    name: 'BreakMate',
+    executableName: 'BreakMate',
+    appBundleId: 'com.breakmate.app',
     appCategoryType: 'public.app-category.productivity',
     icon: './assets/icon', // Will use icon.icns on macOS
     osxSign: {}, // Empty object for basic signing
