@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen, Notification } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
 
@@ -7,6 +7,7 @@ export interface StoreSchema {
   theme: 'light' | 'dark' | 'system';
   breakInterval: number;
   breakDuration: number;
+  skipBreaksDuringMeetings?: boolean;
   timerSettings?: {
     workDuration: number;
     breakDuration: number;
@@ -22,6 +23,7 @@ const store = new Store<StoreSchema>({
     theme: 'light',
     breakInterval: 20,
     breakDuration: 20,
+    skipBreaksDuringMeetings: true,
     timerSettings: {
       workDuration: 20,
       breakDuration: 20,
@@ -35,9 +37,122 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let breakOverlayWindows: BrowserWindow[] = [];
 let breakBroadcastInterval: NodeJS.Timeout | null = null;
+let pendingBreakDuration: number | null = null; // Store pending break if meeting is detected
 
 const isDev = process.env.NODE_ENV !== 'production';
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
+
+// Meeting app identifiers
+const MEETING_APPS = [
+  'Microsoft Teams',
+  'Microsoft Teams (work or school)',
+  'Slack',
+  'Google Chrome', // For Google Meet
+  'Safari', // For Google Meet
+  'Firefox', // For Google Meet
+  'Zoom.us',
+  'zoom.us',
+  'Webex',
+  'Cisco Webex Meetings',
+  'Discord',
+  'Skype',
+];
+
+// Meeting URL patterns for browsers
+const MEETING_URL_PATTERNS = [
+  'meet.google.com',
+  'teams.microsoft.com',
+  'app.slack.com/huddle',
+  'zoom.us/j/',
+  'webex.com',
+];
+
+// Check if user is in a meeting
+async function isInMeeting(): Promise<boolean> {
+  if (process.platform !== 'darwin') {
+    return false; // Only implemented for macOS for now
+  }
+
+  try {
+    const { systemPreferences } = await import('electron');
+
+    // Check screen recording permission (needed to detect windows)
+    const hasScreenCaptureAccess = systemPreferences.getMediaAccessStatus('screen');
+
+    if (hasScreenCaptureAccess !== 'granted') {
+      console.log('[Meeting Detection] Screen recording permission not granted');
+      return false;
+    }
+
+    // Use AppleScript to get frontmost app and check if it's a meeting app
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execPromise = promisify(exec);
+
+    // Get the frontmost application
+    const { stdout: appName } = await execPromise(
+      'osascript -e \'tell application "System Events" to get name of first application process whose frontmost is true\''
+    );
+
+    const activeApp = appName.trim();
+    console.log('[Meeting Detection] Active app:', activeApp);
+
+    // Check if it's a known meeting app
+    if (MEETING_APPS.some(app => activeApp.includes(app))) {
+      console.log('[Meeting Detection] Meeting app detected:', activeApp);
+
+      // For browsers, try to check if they're on a meeting URL
+      if (activeApp.includes('Chrome') || activeApp.includes('Safari') || activeApp.includes('Firefox')) {
+        try {
+          // Try to get the URL from the browser (works for some browsers)
+          const { stdout: windowTitle } = await execPromise(
+            `osascript -e 'tell application "${activeApp}" to get title of front window'`
+          );
+
+          const title = windowTitle.trim().toLowerCase();
+          const isMeetingUrl = MEETING_URL_PATTERNS.some(pattern => title.includes(pattern));
+
+          console.log('[Meeting Detection] Browser window title:', windowTitle.trim());
+          console.log('[Meeting Detection] Is meeting URL:', isMeetingUrl);
+
+          return isMeetingUrl;
+        } catch (error: unknown) {
+          console.log('[Meeting Detection] Could not get browser URL:', error);
+          // If we can't get the URL, assume it's a meeting to be safe
+          return true;
+        }
+      }
+
+      // For dedicated meeting apps, return true
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('[Meeting Detection] Error checking meeting status:', error);
+    return false;
+  }
+}
+
+// Check meeting status and show pending break if meeting ended
+async function checkAndShowPendingBreak() {
+  if (pendingBreakDuration === null) {
+    return;
+  }
+
+  const inMeeting = await isInMeeting();
+
+  if (!inMeeting) {
+    console.log('[Meeting Detection] Meeting ended, showing pending break');
+    const duration = pendingBreakDuration;
+    pendingBreakDuration = null;
+    showBreakOverlay(duration);
+  } else {
+    console.log('[Meeting Detection] Still in meeting, checking again in 30s');
+    // Check again in 30 seconds
+    setTimeout(checkAndShowPendingBreak, 30000);
+  }
+}
 
 // REGISTER IPC HANDLERS IMMEDIATELY (before window creation)
 ipcMain.handle('store-get', (_event, key: keyof StoreSchema) => {
@@ -224,7 +339,35 @@ function createBreakOverlays() {
   });
 }
 
-function showBreakOverlay(duration: number) {
+async function showBreakOverlay(duration: number) {
+  // Check if meeting detection is enabled
+  const skipDuringMeetings = store.get('skipBreaksDuringMeetings') ?? true;
+
+  if (skipDuringMeetings) {
+    // Check if user is in a meeting
+    const inMeeting = await isInMeeting();
+
+    if (inMeeting) {
+      console.log('[Meeting Detection] User is in a meeting, postponing break');
+      pendingBreakDuration = duration;
+
+      // Show notification to user
+      const notification = new Notification({
+        title: 'Break Postponed',
+        body: 'Meeting detected. Your break will start when the meeting ends.',
+        silent: false,
+      });
+      notification.show();
+
+      // Check again in 30 seconds to see if meeting has ended
+      setTimeout(checkAndShowPendingBreak, 30000);
+      return;
+    }
+  }
+
+  // Clear any pending break since we're showing it now
+  pendingBreakDuration = null;
+
   // Start the centralized break timer in the main window
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.executeJavaScript(`
