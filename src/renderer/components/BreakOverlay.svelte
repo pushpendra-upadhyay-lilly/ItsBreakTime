@@ -1,6 +1,7 @@
 <!-- src/renderer/components/BreakOverlay.svelte -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
+  import { timerService } from '../services/timerService';
 
   let timeRemaining = 20; // seconds
   let messages = [
@@ -12,44 +13,43 @@
     '🚶 Walk around a bit',
   ];
   let currentMessage = messages[0];
-  let intervalId: NodeJS.Timeout;
 
   onMount(() => {
-    // Listen for break start event from main process
     if (window.electron?.ipcRenderer) {
-      window.electron.ipcRenderer.on('break:start', (_event, data: { duration: number }) => {
+      // Listen for initial break start
+      window.electron.ipcRenderer.on('break:start', (_event, data) => {
         timeRemaining = data.duration;
         currentMessage = messages[Math.floor(Math.random() * messages.length)];
-        startCountdown();
+        console.log(`[BreakOverlay] Break started with ${timeRemaining}s`);
+      });
+
+      window.electron.ipcRenderer.on('break:timer-update', (_event, data) => {
+        timeRemaining = data.remaining;
+
+        if (timeRemaining <= 0) {
+          console.log('[BreakOverlay] Break ended');
+          timerService.start();
+        }
       });
     }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
   });
 
-  function startCountdown() {
-    if (intervalId) clearInterval(intervalId);
-
-    intervalId = setInterval(() => {
-      timeRemaining--;
-
-      if (timeRemaining <= 0) {
-        clearInterval(intervalId);
-        // Auto-close when timer ends
-        handleSkip();
-      }
-    }, 1000);
-  }
+  onDestroy(() => {
+    if (window.electron?.ipcRenderer) {
+      window.electron.ipcRenderer.removeAllListeners('break:start');
+      window.electron.ipcRenderer.removeAllListeners('break:timer-update');
+    }
+  });
 
   function handleSkip() {
+    timerService.skipBreak();
     if (window.electron?.ipcRenderer) {
       window.electron.ipcRenderer.send('break:skip', true);
     }
   }
 
   function handleSnooze() {
+    timerService.snoozeBreak();
     if (window.electron?.ipcRenderer) {
       window.electron.ipcRenderer.send('break:snooze', true);
     }

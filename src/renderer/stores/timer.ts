@@ -34,7 +34,6 @@ const defaultState: TimerState = {
   cycleCount: 0,
   totalBreaksTaken: 0
 };
-console.log({ persistedSettings });
 
 export const timerSettings = writable<TimerSettings>(persistedSettings || defaultSettings);
 export const timerState = writable<TimerState>(defaultState);

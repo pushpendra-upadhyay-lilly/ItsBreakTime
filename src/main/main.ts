@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, Notification, screen } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
 
@@ -33,14 +33,16 @@ const store = new Store<StoreSchema>({
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let breakOverlayWindow: BrowserWindow | null = null; // NEW: Break overlay window
-
+let breakOverlayWindows: BrowserWindow[] = [];
+let isBreakActive = false;
+let currentBreakDuration = 0;
+let breakStartTime = 0;
+let breakBroadcastInterval: NodeJS.Timeout | null = null;
 
 const isDev = process.env.NODE_ENV !== 'production';
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
-// ✅ REGISTER IPC HANDLERS IMMEDIATELY (before window creation)
-
+// REGISTER IPC HANDLERS IMMEDIATELY (before window creation)
 ipcMain.handle('store-get', (_event, key: keyof StoreSchema) => {
   // console.log('[IPC HANDLER] store-get called with key:', key);
   const value = store.get(key);
@@ -64,88 +66,180 @@ ipcMain.handle('store-has', (_event, key: keyof StoreSchema) => {
   return store.has(key);
 });
 
-function createBreakOverlay() {
-  if (breakOverlayWindow) {
-    return; // Already exists
-  }
+function getRemainingBreakTime(): number {
+  if (!isBreakActive || breakStartTime === 0) return currentBreakDuration;
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
+  const elapsed = Math.floor((Date.now() - breakStartTime) / 1000);
+  const remaining = Math.max(0, currentBreakDuration - elapsed);
+  return remaining;
+}
 
-  breakOverlayWindow = new BrowserWindow({
-    width,
-    height,
-    show: false,
-    frame: false, // No window frame
-    transparent: false, // Solid background (not transparent)
-    alwaysOnTop: true,
-    skipTaskbar: true, // Don't show in taskbar
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    fullscreen: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+function broadcastBreakTimer() {
+  const remaining = getRemainingBreakTime();
+
+  breakOverlayWindows.forEach((overlayWindow) => {
+    if (!overlayWindow.isDestroyed() && !overlayWindow.webContents.isLoading()) {
+      overlayWindow.webContents.send('break:timer-update', {
+        remaining
+      });
+    }
   });
 
-  // Load break overlay HTML
-  if (isDev) {
-    breakOverlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
-  } else {
-    breakOverlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      hash: 'break'
+  // Stop broadcasting when time is up
+  if (remaining <= 0) {
+    if (breakBroadcastInterval) {
+      clearInterval(breakBroadcastInterval);
+      breakBroadcastInterval = null;
+    }
+
+    setTimeout(() => {
+      hideBreakOverlay();
+    }, 100);
+  }
+}
+
+function createBreakOverlays() {
+  // Close existing overlays
+  breakOverlayWindows.forEach(win => {
+    if (!win.isDestroyed()) {
+      if (win.isFocused()) win.blur();
+      win.hide();
+      win.setFullScreen(false);
+      win.close();
+    }
+  });
+  breakOverlayWindows = [];
+
+  const displays = screen.getAllDisplays();
+
+  console.log(`[Break] Creating overlays for ${displays.length} display(s)`);
+
+  displays.forEach((display, index) => {
+    const { x, y, width, height } = display.bounds;
+
+    const overlayWindow = new BrowserWindow({
+      x,
+      y,
+      width,
+      height,
+      show: false,
+      frame: false,
+      transparent: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
     });
-  }
 
-  // macOS: Make window float above fullscreen apps
-  if (process.platform === 'darwin') {
-    app.dock?.hide();
-    breakOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-    breakOverlayWindow.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
+    // Load break overlay HTML
+    if (isDev) {
+      overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+    } else {
+      overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+        hash: 'break'
+      });
+    }
+
+    // macOS: Make window float above fullscreen apps
+    if (process.platform === 'darwin') {
+      app.dock?.hide();
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+      overlayWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+      });
+      overlayWindow.setFullScreenable(true);
+      app.dock?.show();
+    }
+
+    // Windows/Linux: Use kiosk-like behavior
+    if (process.platform !== 'darwin') {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
+
+    overlayWindow.once('closed', () => {
+      const idx = breakOverlayWindows.indexOf(overlayWindow);
+      if (idx > -1) {
+        breakOverlayWindows.splice(idx, 1);
+      }
     });
-    breakOverlayWindow.setFullScreenable(false);
-    app.dock?.show();
-  }
 
-  // Windows/Linux: Use kiosk-like behavior
-  if (process.platform !== 'darwin') {
-    breakOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  }
+    breakOverlayWindows.push(overlayWindow);
 
-  breakOverlayWindow.on('closed', () => {
-    breakOverlayWindow = null;
+    console.log(`[Break] Created overlay ${index + 1} at (${x}, ${y}) ${width}x${height}`);
   });
 }
 
 function showBreakOverlay(duration: number) {
-  if (!breakOverlayWindow) {
-    createBreakOverlay();
+  isBreakActive = true;
+  currentBreakDuration = duration;
+  breakStartTime = Date.now();
+
+  if (breakOverlayWindows.length === 0) {
+    createBreakOverlays();
   }
 
-  // Send break duration to overlay window
-  breakOverlayWindow?.webContents.once('did-finish-load', () => {
-    breakOverlayWindow?.webContents.send('break:start', { duration });
+  breakOverlayWindows.forEach((overlayWindow) => {
+    overlayWindow.webContents.once('did-finish-load', () => {
+      overlayWindow.webContents.send('break:start', {
+        duration: getRemainingBreakTime()
+      });
+    });
+
+    if (!overlayWindow.webContents.isLoading()) {
+      overlayWindow.webContents.send('break:start', {
+        duration: getRemainingBreakTime()
+      });
+    }
+
+    overlayWindow.show();
+    overlayWindow.focus();
+    overlayWindow.setFullScreen(true);
   });
 
-  // If already loaded, send immediately
-  if (breakOverlayWindow?.webContents.isLoading() === false) {
-    breakOverlayWindow?.webContents.send('break:start', { duration });
+  if (breakBroadcastInterval) {
+    clearInterval(breakBroadcastInterval);
   }
 
-  breakOverlayWindow?.show();
-  breakOverlayWindow?.focus();
-  breakOverlayWindow?.setFullScreen(true);
+  breakBroadcastInterval = setInterval(() => {
+    broadcastBreakTimer();
+  }, 100); // Update every 100ms for smooth display
+
+  console.log(`[Break] Showing overlays on ${breakOverlayWindows.length} display(s), starting timer broadcast`);
 }
 
 function hideBreakOverlay() {
-  breakOverlayWindow?.setFullScreen(false);
-  breakOverlayWindow?.hide();
+  if (!isBreakActive) {
+    console.log('[Break] hideBreakOverlay called but break not active, skipping');
+    return;
+  }
+
+  isBreakActive = false;
+  currentBreakDuration = 0;
+  breakStartTime = 0;
+
+  if (breakBroadcastInterval) {
+    clearInterval(breakBroadcastInterval);
+    breakBroadcastInterval = null;
+  }
+
+  breakOverlayWindows.forEach((overlayWindow) => {
+    if (!overlayWindow.isDestroyed()) {
+      if (overlayWindow.isFocused()) overlayWindow.blur();
+      overlayWindow.hide();
+      overlayWindow.setFullScreen(false);
+      overlayWindow.close();
+    }
+  });
+
+  console.log(`[Break] Hidden ${breakOverlayWindows.length} overlay(s), timer broadcast stopped`);
 }
 
 ipcMain.on('timer:complete', (_event, data) => {
@@ -162,34 +256,15 @@ ipcMain.on('timer:complete', (_event, data) => {
 });
 
 ipcMain.on('break:skip', () => {
+  if (!isBreakActive) return;
   hideBreakOverlay();
   mainWindow?.webContents.send('break:skipped');
 });
 
 ipcMain.on('break:snooze', () => {
+  if (!isBreakActive) return;
   hideBreakOverlay();
   mainWindow?.webContents.send('break:snoozed');
-});
-
-// Listen from renderer process
-ipcMain.on('timer:complete', (_event, data) => {
-  const { isOnBreak } = data;
-
-  const notification = new Notification({
-    title: isOnBreak ? 'Break Time! 🎉' : 'Back to Work! 💼',
-    body: isOnBreak
-      ? 'Look away from the screen. Relax your eyes!'
-      : 'Time to get back to work.',
-    // sound: true,
-    urgency: 'critical'
-  });
-
-  notification.show();
-
-  notification.on('click', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
 });
 
 function createWindow() {
@@ -282,6 +357,100 @@ app.whenReady().then(() => {
 
   createTray();
   createWindow();
+
+  screen.on('display-added', () => {
+    console.log('[Break] Display added');
+
+    if (isBreakActive) {
+      const displays = screen.getAllDisplays();
+      const lastDisplay = displays[displays.length - 1];
+      const { x, y, width, height } = lastDisplay.bounds;
+
+      const overlayWindow = new BrowserWindow({
+        x,
+        y,
+        width,
+        height,
+        show: false,
+        frame: false,
+        transparent: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        movable: false,
+        minimizable: false,
+        maximizable: false,
+        fullscreenable: false,
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      });
+
+      if (isDev) {
+        overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+      } else {
+        overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+          hash: 'break'
+        });
+      }
+
+      if (process.platform === 'darwin') {
+        overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+        overlayWindow.setVisibleOnAllWorkspaces(true, {
+          visibleOnFullScreen: true,
+        });
+        overlayWindow.setFullScreenable(false);
+      }
+
+      overlayWindow.webContents.once('did-finish-load', () => {
+        overlayWindow.webContents.send('break:start', {
+          duration: getRemainingBreakTime()
+        });
+      });
+
+      overlayWindow.once('ready-to-show', () => {
+        overlayWindow.show();
+        overlayWindow.focus();
+        overlayWindow.setFullScreen(true);
+      });
+
+      breakOverlayWindows.push(overlayWindow);
+
+      console.log(`[Break] Added overlay on new display with ${getRemainingBreakTime()}s remaining`);
+    }
+  });
+
+  screen.on('display-removed', () => {
+    console.log('[Break] Display removed');
+
+    if (isBreakActive) {
+      const displays = screen.getAllDisplays();
+
+      // Remove overlays that are no longer on valid displays
+      breakOverlayWindows = breakOverlayWindows.filter(win => {
+        if (win.isDestroyed()) return false;
+
+        const bounds = win.getBounds();
+        const isValid = displays.some(display => {
+          return Math.abs(bounds.x - display.bounds.x) < 100;
+        });
+
+        if (!isValid) {
+          if (win.isFocused()) win.blur();
+          win.hide();
+          win.setFullScreen(false);
+          win.close();
+          console.log(`[Break] Removed overlay from disconnected display`);
+        }
+        return isValid;
+      });
+
+      console.log(`[Break] Overlays now on ${breakOverlayWindows.length} display(s)`);
+    }
+  });
+
 });
 
 // macOS: Re-show window on dock icon click (if dock is enabled later)
@@ -302,7 +471,18 @@ app.on('window-all-closed', () => {
 
 // Ensure tray is not garbage collected
 app.on('before-quit', () => {
-  breakOverlayWindow?.close();
+  if (breakBroadcastInterval) {
+    clearInterval(breakBroadcastInterval);
+    breakBroadcastInterval = null;
+  }
+  breakOverlayWindows.forEach(win => {
+    if (!win.isDestroyed()) {
+      if (win.isFocused()) win.blur();
+      win.setFullScreen(false);
+      win.close();
+    }
+  });
+  breakOverlayWindows = [];
   app.isQuitting = true;
 });
 

@@ -8,6 +8,7 @@ export class TimerService {
 
   start() {
     const state = get<TimerState>(timerState);
+    console.log(`[TimerService] Starting timer`, state.isRunning);
     if (state.isRunning) return;
 
     timerState.update((s: TimerState) => ({ ...s, isRunning: true }));
@@ -48,27 +49,40 @@ export class TimerService {
   private handleTimerComplete() {
     this.pause();
     const state = get(timerState);
-    const nextIsOnBreak = !state.isOnBreak;
+    const settings = get(timerSettings);
 
+    // Determine next state
+    const wasOnBreak = state.isOnBreak;
+    const nextIsOnBreak = !wasOnBreak;
+
+    const newCycleCount = wasOnBreak ? state.cycleCount : state.cycleCount + 1;
+    const newBreaksTaken = wasOnBreak ? state.totalBreaksTaken + 1 : state.totalBreaksTaken;
+
+    // Send notification to main process
     if (window.electron?.ipcRenderer) {
       window.electron.ipcRenderer.send('timer:complete', {
         isOnBreak: nextIsOnBreak
       });
     }
 
-    // Update state
-    const settings = get(timerSettings);
+    // Calculate new duration
     const newDuration = nextIsOnBreak
       ? settings.breakDuration
       : settings.workDuration * 60;
 
+    // Update state
     timerState.update((s) => ({
       ...s,
+      isRunning: false,
       isOnBreak: nextIsOnBreak,
       timeRemaining: newDuration,
-      cycleCount: nextIsOnBreak ? s.cycleCount + 1 : s.cycleCount,
-      totalBreaksTaken: nextIsOnBreak ? s.totalBreaksTaken + 1 : s.totalBreaksTaken
+      cycleCount: newCycleCount,
+      totalBreaksTaken: newBreaksTaken
     }));
+
+    if (!nextIsOnBreak) {
+      setTimeout(() => this.start(), 500);
+    }
   }
 
   skipBreak() {
@@ -76,18 +90,25 @@ export class TimerService {
     timerState.update((s) => ({
       ...s,
       isOnBreak: false,
-      timeRemaining: settings.workDuration * 60
+      isRunning: false,
+      timeRemaining: settings.workDuration * 60,
+      totalBreaksTaken: s.totalBreaksTaken + 1
     }));
+
+    setTimeout(() => this.start(), 500);
   }
 
   snoozeBreak() {
     const settings = get(timerSettings);
+
     timerState.update((s) => ({
       ...s,
       timeRemaining: settings.workDuration * 60,
-      isOnBreak: false
+      isOnBreak: false,
+      isRunning: false
     }));
-    this.start();
+
+    setTimeout(() => this.start(), 500);
   }
 }
 

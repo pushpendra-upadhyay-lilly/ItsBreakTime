@@ -5,6 +5,8 @@
   import { timerService } from '../services/timerService';
 
   onMount(() => {
+    timerService.start();
+
     return () => {
       timerService.pause();
     };

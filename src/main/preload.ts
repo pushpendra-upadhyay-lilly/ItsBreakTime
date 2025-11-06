@@ -38,11 +38,24 @@ contextBridge.exposeInMainWorld('electron', {
       const validChannels = [
         'fullscreen:changed',
         'break:start',
+        'break:timer-update',
         'break:skipped',
         'break:snoozed'
       ];
       if (validChannels.includes(channel)) {
         ipcRenderer.on(channel, callback);
+      }
+    },
+    removeAllListeners: (channel: string) => {
+      const validChannels = [
+        'fullscreen:changed',
+        'break:start',
+        'break:timer-update',
+        'break:skipped',
+        'break:snoozed'
+      ];
+      if (validChannels.includes(channel)) {
+        ipcRenderer.removeAllListeners(channel);
       }
     }
   }

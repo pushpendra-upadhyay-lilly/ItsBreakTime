@@ -15,6 +15,7 @@ declare global {
       ipcRenderer: {
         send: (channel: string, data: any) => void;
         on: (channel: string, func: (event: any, data: any) => void) => void;
+        removeAllListeners: (channel: string) => void;
       };
     };
   }
