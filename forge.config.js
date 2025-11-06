@@ -4,6 +4,16 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 export default {
   packagerConfig: {
     asar: true,
+    name: 'ItsBreakTime',
+    executableName: 'ItsBreakTime',
+    appBundleId: 'com.itsbreaktime.app',
+    appCategoryType: 'public.app-category.productivity',
+    icon: './assets/icon', // Will use icon.icns on macOS
+    osxSign: {}, // Empty object for basic signing
+    osxNotarize: undefined, // Can be configured later for notarization
+    extraResource: [
+      './assets'
+    ],
   },
   rebuildConfig: {},
   makers: [
@@ -14,6 +24,9 @@ export default {
     {
       name: '@electron-forge/maker-zip',
       platforms: ['darwin'],
+      config: {
+        macUpdateManifestBaseUrl: undefined, // Can be set for auto-updates
+      },
     },
     {
       name: '@electron-forge/maker-deb',
