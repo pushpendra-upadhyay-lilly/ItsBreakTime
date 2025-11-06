@@ -38,6 +38,7 @@
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.1",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@types/auto-launch": "^5.0.5",
     "@types/electron": "^1.4.38",
     "@types/node": "^24.10.0",
     "@typescript-eslint/eslint-plugin": "^8.46.3",
@@ -58,6 +59,7 @@
     "wait-on": "^9.0.1"
   },
   "dependencies": {
+    "auto-launch": "^5.0.6",
     "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^8.2.0"
   }

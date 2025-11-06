@@ -248,14 +248,17 @@ Be respectful, inclusive, and constructive in all interactions. We're building t
 | `npm run format`             | Format code with Prettier                             |
 | `npm run format:check`       | Check code formatting                                 |
 
+## Run in Mac or Drag into Applications Folder
+`xattr -cr out/BreakMate-darwin-arm64/BreakMate.app && open out/BreakMate-darwin-arm64/BreakMate.app`
+
 ## License
 
 This project is licensed under the ISC License.[4]
 
 ## Acknowledgments
 
-BreakMate is inspired by LookAway, bringing digital wellness features to everyone through open source.[3][2][1]
+BreakMate is inspired by LookAway, bringing digital wellness features to everyone through open source.
 
 ---
 
-**Built with ❤️ by the open-source community**
+**Built with ❤️ by Pushpendra Upadhyay**

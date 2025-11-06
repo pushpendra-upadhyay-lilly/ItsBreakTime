@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
+import AutoLaunch from 'auto-launch';
 
 // Define the store schema with TypeScript types
 export interface StoreSchema {
@@ -29,6 +30,12 @@ const store = new Store<StoreSchema>({
       longBreakInterval: 4
     }
   },
+});
+
+// Initialize auto-launch
+const autoLauncher = new AutoLaunch({
+  name: 'BreakMate',
+  path: app.getPath('exe'),
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -506,6 +513,17 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin') {
     app.dock?.hide();
   }
+
+  // Enable auto-launch on startup
+  autoLauncher.isEnabled().then((isEnabled) => {
+    if (!isEnabled) {
+      autoLauncher.enable().catch((err) => {
+        console.error('[Auto-launch] Failed to enable:', err);
+      });
+    }
+  }).catch((err) => {
+    console.error('[Auto-launch] Failed to check status:', err);
+  });
 
   createTray();
   createWindow();
