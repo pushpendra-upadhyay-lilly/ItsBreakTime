@@ -1,12 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { appStore } from './stores/app';
-  import type { Theme } from './stores/app';
-  import { applyTheme, getResolvedTheme } from './lib/theme';
-
-  // Import Phase 1 components
-  import Timer from './components/Timer.svelte';
   import Settings from './components/Settings.svelte';
+  import Timer from './components/Timer.svelte';
+  import { applyTheme, getResolvedTheme } from './lib/theme';
+  import { timerService } from './services/timerService';
+  import type { Theme } from './stores/app';
+  import { appStore } from './stores/app';
 
   let resolvedTheme: 'light' | 'dark' = 'light';
   let isReady = false;
@@ -36,6 +35,16 @@
       resolvedTheme = getResolvedTheme();
       mediaQuery.addEventListener('change', handleChange);
     });
+
+    if (window.electron?.ipcRenderer) {
+      window.electron.ipcRenderer.on('break:skipped', () => {
+        timerService.skipBreak();
+      });
+
+      window.electron.ipcRenderer.on('break:snoozed', () => {
+        timerService.snoozeBreak();
+      });
+    }
 
     return () => mediaQuery.removeEventListener('change', handleChange);
   });

@@ -50,8 +50,6 @@ export class TimerService {
     const state = get(timerState);
     const nextIsOnBreak = !state.isOnBreak;
 
-    // ✅ Send notification using your existing IPC handler
-    // Note: Your main.ts uses ipcMain.on, so we need to access ipcRenderer directly
     if (window.electron?.ipcRenderer) {
       window.electron.ipcRenderer.send('timer:complete', {
         isOnBreak: nextIsOnBreak

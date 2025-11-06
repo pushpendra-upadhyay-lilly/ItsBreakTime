@@ -25,15 +25,16 @@ const defaultSettings: TimerSettings = {
   longBreakInterval: 4 // every 4 cycles
 };
 
+const persistedSettings = await loadSettings();
+
 const defaultState: TimerState = {
   isRunning: false,
   isOnBreak: false,
-  timeRemaining: defaultSettings.workDuration * 60,
+  timeRemaining: (persistedSettings?.workDuration || defaultSettings.workDuration) * 60,
   cycleCount: 0,
   totalBreaksTaken: 0
 };
-
-const persistedSettings = await loadSettings();
+console.log({ persistedSettings });
 
 export const timerSettings = writable<TimerSettings>(persistedSettings || defaultSettings);
 export const timerState = writable<TimerState>(defaultState);

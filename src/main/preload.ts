@@ -10,7 +10,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 const api = {
   store: {
     get: (key: string) => ipcRenderer.invoke('store-get', key),
-    set: (key: string, value: unknown) => ipcRenderer.invoke('store-set', key, value),
+    set: (key: string, value: any) => ipcRenderer.invoke('store-set', key, value),
     delete: (key: string) => ipcRenderer.invoke('store-delete', key),
     has: (key: string) => ipcRenderer.invoke('store-has', key),
   },
@@ -22,11 +22,27 @@ contextBridge.exposeInMainWorld('api', api);
 // Expose ipcRenderer.send for one-way messages (like notifications)
 contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
-    send: (channel: string, data: unknown) => {
+    send: (channel: string, data: any) => {
       // Whitelist allowed channels for security
-      const validChannels = ['timer:complete'];
+      const validChannels = [
+        'timer:complete',
+        'fullscreen:check',
+        'break:skip',
+        'break:snooze'
+      ];
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
+      }
+    },
+    on: (channel: string, callback: (event: any, data: any) => void) => {
+      const validChannels = [
+        'fullscreen:changed',
+        'break:start',
+        'break:skipped',
+        'break:snoozed'
+      ];
+      if (validChannels.includes(channel)) {
+        ipcRenderer.on(channel, callback);
       }
     }
   }

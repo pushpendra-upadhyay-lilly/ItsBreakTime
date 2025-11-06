@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, Notification } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, Notification, screen } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
 
@@ -33,6 +33,8 @@ const store = new Store<StoreSchema>({
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let breakOverlayWindow: BrowserWindow | null = null; // NEW: Break overlay window
+
 
 const isDev = process.env.NODE_ENV !== 'production';
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
@@ -60,6 +62,113 @@ ipcMain.handle('store-delete', (_event, key: keyof StoreSchema) => {
 ipcMain.handle('store-has', (_event, key: keyof StoreSchema) => {
   // console.log('[IPC HANDLER] store-has called with key:', key);
   return store.has(key);
+});
+
+function createBreakOverlay() {
+  if (breakOverlayWindow) {
+    return; // Already exists
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
+  breakOverlayWindow = new BrowserWindow({
+    width,
+    height,
+    show: false,
+    frame: false, // No window frame
+    transparent: false, // Solid background (not transparent)
+    alwaysOnTop: true,
+    skipTaskbar: true, // Don't show in taskbar
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    fullscreen: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  // Load break overlay HTML
+  if (isDev) {
+    breakOverlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+  } else {
+    breakOverlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      hash: 'break'
+    });
+  }
+
+  // macOS: Make window float above fullscreen apps
+  if (process.platform === 'darwin') {
+    app.dock?.hide();
+    breakOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    breakOverlayWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
+    breakOverlayWindow.setFullScreenable(false);
+    app.dock?.show();
+  }
+
+  // Windows/Linux: Use kiosk-like behavior
+  if (process.platform !== 'darwin') {
+    breakOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  }
+
+  breakOverlayWindow.on('closed', () => {
+    breakOverlayWindow = null;
+  });
+}
+
+function showBreakOverlay(duration: number) {
+  if (!breakOverlayWindow) {
+    createBreakOverlay();
+  }
+
+  // Send break duration to overlay window
+  breakOverlayWindow?.webContents.once('did-finish-load', () => {
+    breakOverlayWindow?.webContents.send('break:start', { duration });
+  });
+
+  // If already loaded, send immediately
+  if (breakOverlayWindow?.webContents.isLoading() === false) {
+    breakOverlayWindow?.webContents.send('break:start', { duration });
+  }
+
+  breakOverlayWindow?.show();
+  breakOverlayWindow?.focus();
+  breakOverlayWindow?.setFullScreen(true);
+}
+
+function hideBreakOverlay() {
+  breakOverlayWindow?.setFullScreen(false);
+  breakOverlayWindow?.hide();
+}
+
+ipcMain.on('timer:complete', (_event, data) => {
+  const { isOnBreak } = data;
+
+  if (isOnBreak) {
+    // Show fullscreen break overlay
+    const breakDuration = store.get('timerSettings')?.breakDuration || 20;
+    showBreakOverlay(breakDuration);
+  } else {
+    // Break ended - hide overlay
+    hideBreakOverlay();
+  }
+});
+
+ipcMain.on('break:skip', () => {
+  hideBreakOverlay();
+  mainWindow?.webContents.send('break:skipped');
+});
+
+ipcMain.on('break:snooze', () => {
+  hideBreakOverlay();
+  mainWindow?.webContents.send('break:snoozed');
 });
 
 // Listen from renderer process
@@ -193,17 +302,7 @@ app.on('window-all-closed', () => {
 
 // Ensure tray is not garbage collected
 app.on('before-quit', () => {
+  breakOverlayWindow?.close();
   app.isQuitting = true;
 });
 
-// app.on('ready', () => {
-
-//   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-//     callback({
-//       responseHeaders: {
-//         ...details.responseHeaders,
-//         'Content-Security-Policy': ['default-src \'none\'']
-//       }
-//     })
-//   });
-// });

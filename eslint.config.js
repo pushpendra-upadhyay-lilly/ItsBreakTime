@@ -45,6 +45,7 @@ export default ts.config(
           varsIgnorePattern: '^_',
         },
       ],
+      '@typescript-eslint/no-explicit-any': 'off', // Allow explicit any types
     },
   },
   {
