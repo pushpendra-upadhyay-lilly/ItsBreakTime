@@ -413,6 +413,10 @@ function createWindow() {
 
   // Show window when ready to avoid flicker
   mainWindow.once('ready-to-show', () => {
+    // Keep dock hidden on macOS even when showing window
+    if (process.platform === 'darwin') {
+      app.dock?.hide();
+    }
     mainWindow?.show();
   });
 
@@ -421,6 +425,20 @@ function createWindow() {
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
+    }
+  });
+
+  // Keep dock hidden when window is shown
+  mainWindow.on('show', () => {
+    if (process.platform === 'darwin') {
+      app.dock?.hide();
+    }
+  });
+
+  // Keep dock hidden when window gains focus
+  mainWindow.on('focus', () => {
+    if (process.platform === 'darwin') {
+      app.dock?.hide();
     }
   });
 }
@@ -440,7 +458,12 @@ function createTray() {
     {
       label: 'Open ItsBreakTime',
       click: () => {
+        // On macOS, ensure dock stays hidden even when showing window
+        if (process.platform === 'darwin') {
+          app.dock?.hide();
+        }
         mainWindow?.show();
+        mainWindow?.focus();
       },
     },
     {
@@ -467,7 +490,12 @@ function createTray() {
     if (mainWindow?.isVisible()) {
       mainWindow.hide();
     } else {
+      // Ensure dock stays hidden when showing window via tray click
+      if (process.platform === 'darwin') {
+        app.dock?.hide();
+      }
       mainWindow?.show();
+      mainWindow?.focus();
     }
   });
 }
