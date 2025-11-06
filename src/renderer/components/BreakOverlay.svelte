@@ -28,7 +28,7 @@
 
         if (timeRemaining <= 0) {
           console.log('[BreakOverlay] Break ended');
-          timerService.start();
+          // Note: Work timer will be started automatically by main process
         }
       });
     }

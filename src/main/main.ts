@@ -34,9 +34,6 @@ const store = new Store<StoreSchema>({
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let breakOverlayWindows: BrowserWindow[] = [];
-let isBreakActive = false;
-let currentBreakDuration = 0;
-let breakStartTime = 0;
 let breakBroadcastInterval: NodeJS.Timeout | null = null;
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -66,36 +63,78 @@ ipcMain.handle('store-has', (_event, key: keyof StoreSchema) => {
   return store.has(key);
 });
 
-function getRemainingBreakTime(): number {
-  if (!isBreakActive || breakStartTime === 0) return currentBreakDuration;
+// Break Timer IPC Handlers - Bridge to renderer's timerService
+ipcMain.handle('break-timer:get-remaining', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return 0;
 
-  const elapsed = Math.floor((Date.now() - breakStartTime) / 1000);
-  const remaining = Math.max(0, currentBreakDuration - elapsed);
-  return remaining;
-}
+  try {
+    const result = await mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.getBreakTimeRemaining() || 0
+    `);
+    return result;
+  } catch (error) {
+    console.error('[Break Timer] Error getting remaining time:', error);
+    return 0;
+  }
+});
+
+ipcMain.handle('break-timer:is-active', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+  try {
+    const result = await mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.isActive() || false
+    `);
+    return result;
+  } catch (error) {
+    console.error('[Break Timer] Error checking if active:', error);
+    return false;
+  }
+});
 
 function broadcastBreakTimer() {
-  const remaining = getRemainingBreakTime();
-
-  breakOverlayWindows.forEach((overlayWindow) => {
-    if (!overlayWindow.isDestroyed() && !overlayWindow.webContents.isLoading()) {
-      overlayWindow.webContents.send('break:timer-update', {
-        remaining
-      });
-    }
-  });
-
-  // Stop broadcasting when time is up
-  if (remaining <= 0) {
-    if (breakBroadcastInterval) {
-      clearInterval(breakBroadcastInterval);
-      breakBroadcastInterval = null;
-    }
-
-    setTimeout(() => {
-      hideBreakOverlay();
-    }, 100);
+  // Request remaining time from the centralized timer service
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.log('[Break Timer] Main window not available');
+    return;
   }
+
+  mainWindow.webContents.executeJavaScript(`
+    window.timerService?.breakTimerManager?.getBreakTimeRemaining() || 0
+  `).then((remaining: number) => {
+    breakOverlayWindows.forEach((overlayWindow) => {
+      if (!overlayWindow.isDestroyed() && !overlayWindow.webContents.isLoading()) {
+        overlayWindow.webContents.send('break:timer-update', {
+          remaining
+        });
+      }
+    });
+
+    // Stop broadcasting when time is up
+    if (remaining <= 0) {
+      if (breakBroadcastInterval) {
+        clearInterval(breakBroadcastInterval);
+        breakBroadcastInterval = null;
+      }
+
+      setTimeout(() => {
+        hideBreakOverlay();
+
+        // Start work timer automatically after break ends
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.executeJavaScript(`
+            window.timerService?.completeBreak()
+          `).then(() => {
+            console.log('[Break Timer] Work timer started automatically after break ended');
+          }).catch((error) => {
+            console.error('[Break Timer] Error starting work timer:', error);
+          });
+        }
+      }, 100);
+    }
+  }).catch((error: Error) => {
+    console.error('[Break Timer] Error broadcasting timer:', error);
+  });
 }
 
 function createBreakOverlays() {
@@ -178,31 +217,45 @@ function createBreakOverlays() {
 }
 
 function showBreakOverlay(duration: number) {
-  isBreakActive = true;
-  currentBreakDuration = duration;
-  breakStartTime = Date.now();
+  // Start the centralized break timer in the main window
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.startBreakTimer(${duration})
+    `).catch((error: Error) => {
+      console.error('[Break Timer] Error starting break timer:', error);
+    });
+  }
 
   if (breakOverlayWindows.length === 0) {
     createBreakOverlays();
   }
 
-  breakOverlayWindows.forEach((overlayWindow) => {
-    overlayWindow.webContents.once('did-finish-load', () => {
-      overlayWindow.webContents.send('break:start', {
-        duration: getRemainingBreakTime()
+  // Get initial remaining time from timer service and send to overlays
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.getBreakTimeRemaining() || ${duration}
+    `).then((remaining: number) => {
+      breakOverlayWindows.forEach((overlayWindow) => {
+        overlayWindow.webContents.once('did-finish-load', () => {
+          overlayWindow.webContents.send('break:start', {
+            duration: remaining
+          });
+        });
+
+        if (!overlayWindow.webContents.isLoading()) {
+          overlayWindow.webContents.send('break:start', {
+            duration: remaining
+          });
+        }
+
+        overlayWindow.show();
+        overlayWindow.focus();
+        overlayWindow.setFullScreen(true);
       });
+    }).catch((error: Error) => {
+      console.error('[Break Timer] Error getting initial time:', error);
     });
-
-    if (!overlayWindow.webContents.isLoading()) {
-      overlayWindow.webContents.send('break:start', {
-        duration: getRemainingBreakTime()
-      });
-    }
-
-    overlayWindow.show();
-    overlayWindow.focus();
-    overlayWindow.setFullScreen(true);
-  });
+  }
 
   if (breakBroadcastInterval) {
     clearInterval(breakBroadcastInterval);
@@ -216,30 +269,42 @@ function showBreakOverlay(duration: number) {
 }
 
 function hideBreakOverlay() {
-  if (!isBreakActive) {
-    console.log('[Break] hideBreakOverlay called but break not active, skipping');
-    return;
+  // Check if break is active via timer service
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.isActive() || false
+    `).then((isActive: boolean) => {
+      if (!isActive) {
+        console.log('[Break] hideBreakOverlay called but break not active, skipping');
+        return;
+      }
+
+      // Stop the centralized break timer
+      mainWindow?.webContents.executeJavaScript(`
+        window.timerService?.breakTimerManager?.stopBreakTimer()
+      `).catch((error: Error) => {
+        console.error('[Break Timer] Error stopping break timer:', error);
+      });
+
+      if (breakBroadcastInterval) {
+        clearInterval(breakBroadcastInterval);
+        breakBroadcastInterval = null;
+      }
+
+      breakOverlayWindows.forEach((overlayWindow) => {
+        if (!overlayWindow.isDestroyed()) {
+          if (overlayWindow.isFocused()) overlayWindow.blur();
+          overlayWindow.hide();
+          overlayWindow.setFullScreen(false);
+          overlayWindow.close();
+        }
+      });
+
+      console.log(`[Break] Hidden ${breakOverlayWindows.length} overlay(s), timer broadcast stopped`);
+    }).catch((error: Error) => {
+      console.error('[Break Timer] Error checking if active:', error);
+    });
   }
-
-  isBreakActive = false;
-  currentBreakDuration = 0;
-  breakStartTime = 0;
-
-  if (breakBroadcastInterval) {
-    clearInterval(breakBroadcastInterval);
-    breakBroadcastInterval = null;
-  }
-
-  breakOverlayWindows.forEach((overlayWindow) => {
-    if (!overlayWindow.isDestroyed()) {
-      if (overlayWindow.isFocused()) overlayWindow.blur();
-      overlayWindow.hide();
-      overlayWindow.setFullScreen(false);
-      overlayWindow.close();
-    }
-  });
-
-  console.log(`[Break] Hidden ${breakOverlayWindows.length} overlay(s), timer broadcast stopped`);
 }
 
 ipcMain.on('timer:complete', (_event, data) => {
@@ -256,15 +321,33 @@ ipcMain.on('timer:complete', (_event, data) => {
 });
 
 ipcMain.on('break:skip', () => {
-  if (!isBreakActive) return;
-  hideBreakOverlay();
-  mainWindow?.webContents.send('break:skipped');
+  // Check if break is active before proceeding
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.isActive() || false
+    `).then((isActive: boolean) => {
+      if (!isActive) return;
+      hideBreakOverlay();
+      mainWindow?.webContents.send('break:skipped');
+    }).catch((error: Error) => {
+      console.error('[Break Timer] Error in skip handler:', error);
+    });
+  }
 });
 
 ipcMain.on('break:snooze', () => {
-  if (!isBreakActive) return;
-  hideBreakOverlay();
-  mainWindow?.webContents.send('break:snoozed');
+  // Check if break is active before proceeding
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(`
+      window.timerService?.breakTimerManager?.isActive() || false
+    `).then((isActive: boolean) => {
+      if (!isActive) return;
+      hideBreakOverlay();
+      mainWindow?.webContents.send('break:snoozed');
+    }).catch((error: Error) => {
+      console.error('[Break Timer] Error in snooze handler:', error);
+    });
+  }
 });
 
 function createWindow() {
@@ -361,93 +444,118 @@ app.whenReady().then(() => {
   screen.on('display-added', () => {
     console.log('[Break] Display added');
 
-    if (isBreakActive) {
-      const displays = screen.getAllDisplays();
-      const lastDisplay = displays[displays.length - 1];
-      const { x, y, width, height } = lastDisplay.bounds;
+    // Check if break is active via timer service
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.executeJavaScript(`
+        window.timerService?.breakTimerManager?.isActive() || false
+      `).then((isActive: boolean) => {
+        if (!isActive) return;
 
-      const overlayWindow = new BrowserWindow({
-        x,
-        y,
-        width,
-        height,
-        show: false,
-        frame: false,
-        transparent: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: false,
-        movable: false,
-        minimizable: false,
-        maximizable: false,
-        fullscreenable: false,
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
-          contextIsolation: true,
-          nodeIntegration: false,
-        },
-      });
+        const displays = screen.getAllDisplays();
+        const lastDisplay = displays[displays.length - 1];
+        const { x, y, width, height } = lastDisplay.bounds;
 
-      if (isDev) {
-        overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
-      } else {
-        overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
-          hash: 'break'
+        const overlayWindow = new BrowserWindow({
+          x,
+          y,
+          width,
+          height,
+          show: false,
+          frame: false,
+          transparent: false,
+          alwaysOnTop: true,
+          skipTaskbar: true,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+          },
         });
-      }
 
-      if (process.platform === 'darwin') {
-        overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-        overlayWindow.setVisibleOnAllWorkspaces(true, {
-          visibleOnFullScreen: true,
+        if (isDev) {
+          overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+        } else {
+          overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+            hash: 'break'
+          });
+        }
+
+        if (process.platform === 'darwin') {
+          overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+          overlayWindow.setVisibleOnAllWorkspaces(true, {
+            visibleOnFullScreen: true,
+          });
+          overlayWindow.setFullScreenable(false);
+        }
+
+        // Get remaining time from timer service
+        mainWindow?.webContents.executeJavaScript(`
+          window.timerService?.breakTimerManager?.getBreakTimeRemaining() || 0
+        `).then((remaining: number) => {
+          overlayWindow.webContents.once('did-finish-load', () => {
+            overlayWindow.webContents.send('break:start', {
+              duration: remaining
+            });
+          });
+
+          overlayWindow.once('ready-to-show', () => {
+            overlayWindow.show();
+            overlayWindow.focus();
+            overlayWindow.setFullScreen(true);
+          });
+
+          breakOverlayWindows.push(overlayWindow);
+
+          console.log(`[Break] Added overlay on new display with ${remaining}s remaining`);
+        }).catch((error: Error) => {
+          console.error('[Break Timer] Error getting remaining time for new display:', error);
         });
-        overlayWindow.setFullScreenable(false);
-      }
-
-      overlayWindow.webContents.once('did-finish-load', () => {
-        overlayWindow.webContents.send('break:start', {
-          duration: getRemainingBreakTime()
-        });
+      }).catch((error: Error) => {
+        console.error('[Break Timer] Error checking if active for new display:', error);
       });
-
-      overlayWindow.once('ready-to-show', () => {
-        overlayWindow.show();
-        overlayWindow.focus();
-        overlayWindow.setFullScreen(true);
-      });
-
-      breakOverlayWindows.push(overlayWindow);
-
-      console.log(`[Break] Added overlay on new display with ${getRemainingBreakTime()}s remaining`);
     }
   });
 
   screen.on('display-removed', () => {
     console.log('[Break] Display removed');
 
-    if (isBreakActive) {
-      const displays = screen.getAllDisplays();
+    // Check if break is active via timer service
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.executeJavaScript(`
+        window.timerService?.breakTimerManager?.isActive() || false
+      `).then((isActive: boolean) => {
+        if (!isActive) return;
 
-      // Remove overlays that are no longer on valid displays
-      breakOverlayWindows = breakOverlayWindows.filter(win => {
-        if (win.isDestroyed()) return false;
+        const displays = screen.getAllDisplays();
 
-        const bounds = win.getBounds();
-        const isValid = displays.some(display => {
-          return Math.abs(bounds.x - display.bounds.x) < 100;
+        // Remove overlays that are no longer on valid displays
+        breakOverlayWindows = breakOverlayWindows.filter(win => {
+          if (win.isDestroyed()) return false;
+
+          const bounds = win.getBounds();
+          const isValid = displays.some(display => {
+            return Math.abs(bounds.x - display.bounds.x) < 100;
+          });
+
+          if (!isValid) {
+            if (win.isFocused()) win.blur();
+            win.hide();
+            win.setFullScreen(false);
+            win.close();
+            console.log(`[Break] Removed overlay from disconnected display`);
+          }
+          return isValid;
         });
 
-        if (!isValid) {
-          if (win.isFocused()) win.blur();
-          win.hide();
-          win.setFullScreen(false);
-          win.close();
-          console.log(`[Break] Removed overlay from disconnected display`);
-        }
-        return isValid;
+        console.log(`[Break] Overlays now on ${breakOverlayWindows.length} display(s)`);
+      }).catch((error: Error) => {
+        console.error('[Break Timer] Error checking if active for display removed:', error);
       });
-
-      console.log(`[Break] Overlays now on ${breakOverlayWindows.length} display(s)`);
     }
   });
 

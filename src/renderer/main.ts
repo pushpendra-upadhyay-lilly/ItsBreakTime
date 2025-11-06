@@ -2,6 +2,16 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
 import BreakOverlay from './components/BreakOverlay.svelte';
+import { timerService } from './services/timerService';
+
+// Expose timerService to window for main process access
+declare global {
+  interface Window {
+    timerService: typeof timerService;
+  }
+}
+
+window.timerService = timerService;
 
 const target = document.getElementById('app')!;
 
