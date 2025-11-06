@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [svelte()],
   root: './src/renderer',
   publicDir: '../../public',
+  base: './', // Use relative paths for Electron
   server: {
     port: 5173,
     strictPort: true,

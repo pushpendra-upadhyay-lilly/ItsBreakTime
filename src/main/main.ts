@@ -36,7 +36,8 @@ let tray: Tray | null = null;
 let breakOverlayWindows: BrowserWindow[] = [];
 let breakBroadcastInterval: NodeJS.Timeout | null = null;
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Check if app is packaged (production) or running in dev mode
+const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
 // REGISTER IPC HANDLERS IMMEDIATELY (before window creation)
@@ -181,7 +182,7 @@ function createBreakOverlays() {
 
     // Load break overlay HTML
     if (isDev) {
-      overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+      overlayWindow.loadFile(`${VITE_DEV_SERVER_URL}#/break`);
     } else {
       overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
         hash: 'break'
@@ -405,7 +406,7 @@ function createWindow() {
 
   // Load Vite dev server in dev, production build in prod
   if (isDev) {
-    mainWindow.loadURL(VITE_DEV_SERVER_URL);
+    mainWindow.loadFile(VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools(); // Optional: auto-open DevTools
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -546,7 +547,7 @@ app.whenReady().then(() => {
         });
 
         if (isDev) {
-          overlayWindow.loadURL(`${VITE_DEV_SERVER_URL}#/break`);
+          overlayWindow.loadFile(`${VITE_DEV_SERVER_URL}#/break`);
         } else {
           overlayWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
             hash: 'break'

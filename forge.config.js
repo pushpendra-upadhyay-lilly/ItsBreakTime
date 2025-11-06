@@ -9,8 +9,9 @@ export default {
     appBundleId: 'com.breakmate.app',
     appCategoryType: 'public.app-category.productivity',
     icon: './assets/icon', // Will use icon.icns on macOS
-    osxSign: {}, // Empty object for basic signing
-    osxNotarize: undefined, // Can be configured later for notarization
+    // Disable code signing for development/corporate environments
+    // osxSign: {}, // Empty object for basic signing
+    // osxNotarize: undefined, // Can be configured later for notarization
     extraResource: [
       './assets'
     ],
@@ -50,8 +51,9 @@ export default {
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+      // Disable ASAR integrity validation for corporate environments
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
     }),
   ],
 };
