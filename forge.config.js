@@ -2,6 +2,19 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 export default {
+  publishers: [
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'pushpendra-upadhyay-lilly',
+          name: 'ItsBreakTime'
+        },
+        prerelease: false,
+        draft: true, // Creates a draft release so you can review before publishing
+      }
+    }
+  ],
   packagerConfig: {
     asar: true,
     name: 'BreakMate',
