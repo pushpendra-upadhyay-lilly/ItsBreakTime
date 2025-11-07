@@ -1,7 +1,6 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen, dialog } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
-import AutoLaunch from 'auto-launch';
 
 // Define the store schema with TypeScript types
 export interface StoreSchema {
@@ -36,11 +35,53 @@ const store = new Store<StoreSchema>({
   },
 });
 
-// Initialize auto-launch
-const autoLauncher = new AutoLaunch({
-  name: 'BreakMate',
-  path: app.getPath('exe'),
-});
+// Auto-launch helper functions using Electron's native API (no permissions needed!)
+function enableAutoLaunch() {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: false,
+      name: 'BreakMate',
+    });
+    const settings = app.getLoginItemSettings();
+    console.log('[Auto-launch] Enabled using native Electron API. OS verified:', settings.openAtLogin);
+
+    // If OS setting didn't work (returns false), log a warning but continue
+    // The store value will be used as source of truth
+    if (!settings.openAtLogin) {
+      console.warn('[Auto-launch] OS setting shows false after enable. Using store as source of truth.');
+    }
+  } catch (error) {
+    console.error('[Auto-launch] Error in enableAutoLaunch:', error);
+    throw error;
+  }
+}
+
+function disableAutoLaunch() {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: false,
+    });
+    const settings = app.getLoginItemSettings();
+    console.log('[Auto-launch] Disabled using native Electron API. OS verified:', settings.openAtLogin);
+  } catch (error) {
+    console.error('[Auto-launch] Error in disableAutoLaunch:', error);
+    throw error;
+  }
+}
+
+function isAutoLaunchEnabled(): boolean {
+  const settings = app.getLoginItemSettings();
+  const storedValue = store.get('autoLaunchEnabled');
+  console.log('[Auto-launch] Checking status - OS says:', settings.openAtLogin, 'Store says:', storedValue);
+
+  // Trust the store value as source of truth since OS might not reflect changes immediately
+  // If store has a value, use it; otherwise fall back to OS setting
+  if (typeof storedValue === 'boolean') {
+    return storedValue;
+  }
+  return settings.openAtLogin;
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -75,12 +116,13 @@ ipcMain.handle('store-has', (_event, key: keyof StoreSchema) => {
   return store.has(key);
 });
 
-// Auto-launch IPC Handlers
+// Auto-launch IPC Handlers (using native Electron API)
 ipcMain.handle('auto-launch:enable', async () => {
   try {
-    await autoLauncher.enable();
+    console.log('[Auto-launch] Attempting to enable');
+    enableAutoLaunch();
     store.set('autoLaunchEnabled', true);
-    console.log('[Auto-launch] Enabled');
+    console.log('[Auto-launch] Enabled successfully');
     return { success: true };
   } catch (error) {
     console.error('[Auto-launch] Failed to enable:', error);
@@ -90,9 +132,10 @@ ipcMain.handle('auto-launch:enable', async () => {
 
 ipcMain.handle('auto-launch:disable', async () => {
   try {
-    await autoLauncher.disable();
+    console.log('[Auto-launch] Attempting to disable');
+    disableAutoLaunch();
     store.set('autoLaunchEnabled', false);
-    console.log('[Auto-launch] Disabled');
+    console.log('[Auto-launch] Disabled successfully');
     return { success: true };
   } catch (error) {
     console.error('[Auto-launch] Failed to disable:', error);
@@ -102,7 +145,8 @@ ipcMain.handle('auto-launch:disable', async () => {
 
 ipcMain.handle('auto-launch:is-enabled', async () => {
   try {
-    const isEnabled = await autoLauncher.isEnabled();
+    const isEnabled = isAutoLaunchEnabled();
+    console.log('[Auto-launch] Current status:', isEnabled);
     return isEnabled;
   } catch (error) {
     console.error('[Auto-launch] Failed to check status:', error);
@@ -572,7 +616,7 @@ async function askAutoLaunchPermission() {
 
       if (shouldEnable) {
         try {
-          await autoLauncher.enable();
+          enableAutoLaunch();
           console.log('[Auto-launch] Enabled by user choice');
         } catch (err) {
           console.error('[Auto-launch] Failed to enable:', err);
@@ -584,18 +628,18 @@ async function askAutoLaunchPermission() {
   } else {
     // Already configured, check if it should be enabled
     const shouldBeEnabled = store.get('autoLaunchEnabled');
-    const isEnabled = await autoLauncher.isEnabled();
+    const isEnabled = isAutoLaunchEnabled();
 
     if (shouldBeEnabled && !isEnabled) {
       try {
-        await autoLauncher.enable();
+        enableAutoLaunch();
         console.log('[Auto-launch] Re-enabled from saved preference');
       } catch (err) {
         console.error('[Auto-launch] Failed to enable:', err);
       }
     } else if (!shouldBeEnabled && isEnabled) {
       try {
-        await autoLauncher.disable();
+        disableAutoLaunch();
         console.log('[Auto-launch] Disabled from saved preference');
       } catch (err) {
         console.error('[Auto-launch] Failed to disable:', err);
