@@ -6,6 +6,11 @@ export interface IElectronAPI {
     delete: (key: string) => Promise<void>;
     has: (key: string) => Promise<boolean>;
   };
+  autoLaunch: {
+    enable: () => Promise<{ success: boolean; error?: string }>;
+    disable: () => Promise<{ success: boolean; error?: string }>;
+    isEnabled: () => Promise<boolean>;
+  };
 }
 
 declare global {

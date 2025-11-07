@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, Tray, ipcMain, screen, dialog } from 'electron';
 import path from 'path';
 import Store from 'electron-store';
 import AutoLaunch from 'auto-launch';
@@ -8,6 +8,8 @@ export interface StoreSchema {
   theme: 'light' | 'dark' | 'system';
   breakInterval: number;
   breakDuration: number;
+  autoLaunchConfigured: boolean;
+  autoLaunchEnabled: boolean;
   timerSettings?: {
     workDuration: number;
     breakDuration: number;
@@ -23,6 +25,8 @@ const store = new Store<StoreSchema>({
     theme: 'light',
     breakInterval: 20,
     breakDuration: 20,
+    autoLaunchConfigured: false,
+    autoLaunchEnabled: false,
     timerSettings: {
       workDuration: 20,
       breakDuration: 20,
@@ -69,6 +73,41 @@ ipcMain.handle('store-delete', (_event, key: keyof StoreSchema) => {
 ipcMain.handle('store-has', (_event, key: keyof StoreSchema) => {
   // console.log('[IPC HANDLER] store-has called with key:', key);
   return store.has(key);
+});
+
+// Auto-launch IPC Handlers
+ipcMain.handle('auto-launch:enable', async () => {
+  try {
+    await autoLauncher.enable();
+    store.set('autoLaunchEnabled', true);
+    console.log('[Auto-launch] Enabled');
+    return { success: true };
+  } catch (error) {
+    console.error('[Auto-launch] Failed to enable:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('auto-launch:disable', async () => {
+  try {
+    await autoLauncher.disable();
+    store.set('autoLaunchEnabled', false);
+    console.log('[Auto-launch] Disabled');
+    return { success: true };
+  } catch (error) {
+    console.error('[Auto-launch] Failed to disable:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('auto-launch:is-enabled', async () => {
+  try {
+    const isEnabled = await autoLauncher.isEnabled();
+    return isEnabled;
+  } catch (error) {
+    console.error('[Auto-launch] Failed to check status:', error);
+    return false;
+  }
 });
 
 // Break Timer IPC Handlers - Bridge to renderer's timerService
@@ -426,6 +465,9 @@ function createWindow() {
       app.dock?.hide();
     }
     mainWindow?.show();
+    
+    // Ask for auto-launch permission after window is shown
+    askAutoLaunchPermission();
   });
 
   // Prevent window close; hide instead (menubar behavior)
@@ -508,22 +550,65 @@ function createTray() {
   });
 }
 
+// Auto-launch permission dialog
+async function askAutoLaunchPermission() {
+  const isConfigured = store.get('autoLaunchConfigured');
+  
+  if (!isConfigured) {
+    // Wait a bit for the window to be ready
+    setTimeout(async () => {
+      const result = await dialog.showMessageBox(mainWindow!, {
+        type: 'question',
+        buttons: ['Yes, start on login', 'No, thanks'],
+        defaultId: 0,
+        title: 'Start on Login?',
+        message: 'Start BreakMate automatically when you log in?',
+        detail: 'BreakMate works best when it runs in the background to remind you to take breaks.',
+      });
+
+      const shouldEnable = result.response === 0;
+      store.set('autoLaunchConfigured', true);
+      store.set('autoLaunchEnabled', shouldEnable);
+
+      if (shouldEnable) {
+        try {
+          await autoLauncher.enable();
+          console.log('[Auto-launch] Enabled by user choice');
+        } catch (err) {
+          console.error('[Auto-launch] Failed to enable:', err);
+        }
+      } else {
+        console.log('[Auto-launch] Disabled by user choice');
+      }
+    }, 1000);
+  } else {
+    // Already configured, check if it should be enabled
+    const shouldBeEnabled = store.get('autoLaunchEnabled');
+    const isEnabled = await autoLauncher.isEnabled();
+
+    if (shouldBeEnabled && !isEnabled) {
+      try {
+        await autoLauncher.enable();
+        console.log('[Auto-launch] Re-enabled from saved preference');
+      } catch (err) {
+        console.error('[Auto-launch] Failed to enable:', err);
+      }
+    } else if (!shouldBeEnabled && isEnabled) {
+      try {
+        await autoLauncher.disable();
+        console.log('[Auto-launch] Disabled from saved preference');
+      } catch (err) {
+        console.error('[Auto-launch] Failed to disable:', err);
+      }
+    }
+  }
+}
+
 // macOS: Hide dock icon to make it menubar-only
 app.whenReady().then(() => {
   if (process.platform === 'darwin') {
     app.dock?.hide();
   }
-
-  // Enable auto-launch on startup
-  autoLauncher.isEnabled().then((isEnabled) => {
-    if (!isEnabled) {
-      autoLauncher.enable().catch((err) => {
-        console.error('[Auto-launch] Failed to enable:', err);
-      });
-    }
-  }).catch((err) => {
-    console.error('[Auto-launch] Failed to check status:', err);
-  });
 
   createTray();
   createWindow();

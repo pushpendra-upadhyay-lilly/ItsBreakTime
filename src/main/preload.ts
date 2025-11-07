@@ -14,6 +14,11 @@ const api = {
     delete: (key: string) => ipcRenderer.invoke('store-delete', key),
     has: (key: string) => ipcRenderer.invoke('store-has', key),
   },
+  autoLaunch: {
+    enable: () => ipcRenderer.invoke('auto-launch:enable'),
+    disable: () => ipcRenderer.invoke('auto-launch:disable'),
+    isEnabled: () => ipcRenderer.invoke('auto-launch:is-enabled'),
+  },
 };
 
 // Expose protected API to renderer via contextBridge
